@@ -1,0 +1,51 @@
+#!/bin/bash
+# common-lib - shared utilities for scanners and CLI wrappers.
+
+load_config_if_exists() {
+    local file="$1"
+    if [[ -f "$file" ]]; then
+        # shellcheck disable=SC1090
+        source "$file"
+    fi
+}
+
+validate_on_off() {
+    local name="$1"
+    local value="$2"
+    if [[ ! "$value" =~ ^(on|off)$ ]]; then
+        echo "$name must be 'on' or 'off'." >&2
+        return 1
+    fi
+}
+
+ensure_logs_dir() {
+    local path="$1"
+    mkdir -p "$path"
+}
+
+log_ban_event() {
+    local file="$1"
+    local ts="$2"
+    local ip="$3"
+    local hostname="$4"
+    local agent="$5"
+    printf '%s %s %s %s\n' "$ts" "$ip" "$hostname" "$agent" >> "$file"
+}
+
+ban_ip32() {
+    local root_dir="$1"
+    local ip="$2"
+    "$root_dir/cli/perm-ban" "$ip/32" >/dev/null 2>&1 || true
+}
+
+is_ip_or_subnet_banned() {
+    local entry="$1"
+    ipset test badnets_perm "$entry" >/dev/null 2>&1
+}
+
+run_scanner_script() {
+    local root_dir="$1"
+    local rel_path="$2"
+    shift 2
+    "$root_dir/$rel_path" "$@"
+}

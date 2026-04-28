@@ -1,0 +1,11 @@
+#!/bin/bash
+# perm-scan-all - Run all scanners across today + previous days.
+
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck disable=SC1091
+source "$ROOT_DIR/lib/common-lib"
+run_scanner_script "$ROOT_DIR" "cron/cron-realtime-scan" "$@"
+run_scanner_script "$ROOT_DIR" "cron/cron-daily-scan" "$@"
+run_scanner_script "$ROOT_DIR" "cron/cron-weekly-scan" "$@"

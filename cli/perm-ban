@@ -11,6 +11,10 @@ if [[ $EUID -ne 0 ]]; then
     exec sudo "$0" "$@"
 fi
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck disable=SC1091
+source "$ROOT_DIR/lib/subnet-lib"
+
 # Create ipset if missing
 if ! ipset list badnets_perm &>/dev/null; then
     ipset create badnets_perm hash:net
@@ -22,6 +26,12 @@ for entry in "$@"; do
     # Normalize: ensure /32 is preserved (ipset accepts it)
     if ipset add badnets_perm "$entry" 2>/dev/null; then
         echo "Banned: $entry"
+        if [[ "$entry" =~ /24$ ]]; then
+            removed_count="$(remove_covered_ip32_bans "$ROOT_DIR" "$entry")"
+            if (( removed_count > 0 )); then
+                echo "Removed covered /32 entries: $removed_count"
+            fi
+        fi
     else
         echo "Already banned or invalid: $entry"
     fi

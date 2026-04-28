@@ -1,0 +1,152 @@
+#!/bin/bash
+# cron-weekly-scan - Weekly (6 days) scan of rotated access logs.
+
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck disable=SC1091
+source "$ROOT_DIR/lib/common-lib"
+# shellcheck disable=SC1091
+source "$ROOT_DIR/lib/agent-lib"
+# shellcheck disable=SC1091
+source "$ROOT_DIR/lib/hostname-lib"
+# shellcheck disable=SC1091
+source "$ROOT_DIR/lib/sitemap-lib"
+# shellcheck disable=SC1091
+source "$ROOT_DIR/lib/subnet-lib"
+
+LOG_DIR_DEFAULT="/var/log/nginx"
+ACCESS_LOG_BASENAME_DEFAULT="access.log"
+DNS_TIMEOUT_SECONDS_DEFAULT=3
+HOST_SCAN_LOG_DEFAULT="on"
+HOST_SCAN_BAN_DEFAULT="on"
+AGENT_SCAN_LOG_DEFAULT="on"
+AGENT_SCAN_BAN_DEFAULT="on"
+SITEMAP_SCAN_LOG_DEFAULT="on"
+SITEMAP_SCAN_BAN_DEFAULT="on"
+SUBNET_SCAN_LOG_DEFAULT="on"
+SUBNET_PROMOTION_DEFAULT="on"
+SUBNET_THRESHOLD_DEFAULT=10
+
+LOGS_DIR="$ROOT_DIR/logs"
+ensure_logs_dir "$LOGS_DIR"
+
+LOCK_FILE="$LOGS_DIR/weekly-scan.lock"
+HOSTNAME_CACHE_FILE="$LOGS_DIR/hostname-cache.tsv"
+HOST_BAN_LOG="$LOGS_DIR/host-ban-log"
+AGENT_BAN_LOG="$LOGS_DIR/agent-ban-log"
+AGENT_UNIQUE_LOG="$LOGS_DIR/agent-unique-log"
+SITEMAP_BAN_LOG="$LOGS_DIR/sitemap-ban-log"
+SUBNET_PROMOTION_LOG="$LOGS_DIR/subnet-promotion-log"
+
+load_config_if_exists "$ROOT_DIR/config/old-man-bans-cloud.local"
+
+LOG_DIR="${LOG_DIR:-$LOG_DIR_DEFAULT}"
+ACCESS_LOG_BASENAME="${ACCESS_LOG_BASENAME:-$ACCESS_LOG_BASENAME_DEFAULT}"
+DNS_TIMEOUT_SECONDS="${DNS_TIMEOUT_SECONDS:-$DNS_TIMEOUT_SECONDS_DEFAULT}"
+HOST_SCAN_LOG="${HOST_SCAN_LOG:-$HOST_SCAN_LOG_DEFAULT}"
+HOST_SCAN_BAN="${HOST_SCAN_BAN:-$HOST_SCAN_BAN_DEFAULT}"
+AGENT_SCAN_LOG="${AGENT_SCAN_LOG:-$AGENT_SCAN_LOG_DEFAULT}"
+AGENT_SCAN_BAN="${AGENT_SCAN_BAN:-$AGENT_SCAN_BAN_DEFAULT}"
+SITEMAP_SCAN_LOG="${SITEMAP_SCAN_LOG:-$SITEMAP_SCAN_LOG_DEFAULT}"
+SITEMAP_SCAN_BAN="${SITEMAP_SCAN_BAN:-$SITEMAP_SCAN_BAN_DEFAULT}"
+SUBNET_SCAN_LOG="${SUBNET_SCAN_LOG:-$SUBNET_SCAN_LOG_DEFAULT}"
+SUBNET_PROMOTION="${SUBNET_PROMOTION:-$SUBNET_PROMOTION_DEFAULT}"
+SUBNET_THRESHOLD="${SUBNET_THRESHOLD:-$SUBNET_THRESHOLD_DEFAULT}"
+
+validate_on_off "HOST_SCAN_LOG" "$HOST_SCAN_LOG"
+validate_on_off "HOST_SCAN_BAN" "$HOST_SCAN_BAN"
+validate_on_off "AGENT_SCAN_LOG" "$AGENT_SCAN_LOG"
+validate_on_off "AGENT_SCAN_BAN" "$AGENT_SCAN_BAN"
+validate_on_off "SITEMAP_SCAN_LOG" "$SITEMAP_SCAN_LOG"
+validate_on_off "SITEMAP_SCAN_BAN" "$SITEMAP_SCAN_BAN"
+validate_on_off "SUBNET_SCAN_LOG" "$SUBNET_SCAN_LOG"
+validate_on_off "SUBNET_PROMOTION" "$SUBNET_PROMOTION"
+[[ "$SUBNET_THRESHOLD" =~ ^[0-9]+$ ]] || { echo "SUBNET_THRESHOLD must be an integer." >&2; exit 1; }
+
+declare -a BAD_HOSTNAMES GOOD_HOSTNAMES BAD_AGENTS GOOD_AGENTS SITEMAP_TOKENS
+load_tokens "$ROOT_DIR/config/bad-hostnames.local" BAD_HOSTNAMES
+load_tokens "$ROOT_DIR/config/good-hostnames.local" GOOD_HOSTNAMES
+load_tokens "$ROOT_DIR/config/bad-agents.local" BAD_AGENTS
+load_tokens "$ROOT_DIR/config/good-agents.local" GOOD_AGENTS
+load_tokens "$ROOT_DIR/config/sitemap.local" SITEMAP_TOKENS
+
+exec 9>"$LOCK_FILE"
+flock -n 9 || { echo "Another weekly scan is currently running; exiting."; exit 0; }
+
+shopt -s nullglob
+log_files=( "$LOG_DIR/$ACCESS_LOG_BASENAME".[1-9]* "$LOG_DIR/$ACCESS_LOG_BASENAME".[1-9]*.gz )
+shopt -u nullglob
+(( ${#log_files[@]} > 0 )) || { echo "No rotated logs found for weekly scan."; exit 0; }
+
+hostname_cache_load "$HOSTNAME_CACHE_FILE"
+declare -A ACTIONED_THIS_RUN SUBNET_COUNT SUBNET_IPS IP_AGENT IP_HOSTNAME
+
+while IFS=$'\t' read -r ip path agent; do
+    [[ -n "$ip" ]] || continue
+    hostname="$(hostname_cache_get "$ip" "$DNS_TIMEOUT_SECONDS")"
+    IP_HOSTNAME["$ip"]="$hostname"
+    [[ -z "${IP_AGENT[$ip]+x}" ]] && IP_AGENT["$ip"]="$agent"
+    is_allowlisted_event "$ip" "$hostname" "$agent" GOOD_AGENTS GOOD_HOSTNAMES && continue
+
+    ts="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+    should_ban="off"
+
+    if contains_any_token "$ip $hostname" "${BAD_HOSTNAMES[@]}"; then
+        [[ "$HOST_SCAN_LOG" == "on" ]] && log_ban_event "$HOST_BAN_LOG" "$ts" "$ip" "$hostname" "$agent"
+        [[ "$HOST_SCAN_BAN" == "on" ]] && should_ban="on"
+    fi
+
+    if contains_any_token "$agent" "${BAD_AGENTS[@]}"; then
+        if [[ "$AGENT_SCAN_LOG" == "on" ]]; then
+            append_unique_line "$AGENT_UNIQUE_LOG" "$agent"
+            log_ban_event "$AGENT_BAN_LOG" "$ts" "$ip" "$hostname" "$agent"
+        fi
+        [[ "$AGENT_SCAN_BAN" == "on" ]] && should_ban="on"
+    fi
+
+    if sitemap_path_matches "$path" "${SITEMAP_TOKENS[@]}"; then
+        [[ "$SITEMAP_SCAN_LOG" == "on" ]] && log_ban_event "$SITEMAP_BAN_LOG" "$ts" "$ip" "$hostname" "$agent"
+        [[ "$SITEMAP_SCAN_BAN" == "on" ]] && should_ban="on"
+
+        subnet="$(ipv4_to_subnet24 "$ip" || true)"
+        if [[ -n "$subnet" ]]; then
+            SUBNET_COUNT["$subnet"]=$(( ${SUBNET_COUNT[$subnet]:-0} + 1 ))
+            SUBNET_IPS["$subnet"]="${SUBNET_IPS[$subnet]:-} $ip"
+        fi
+    fi
+
+    if [[ "$should_ban" == "on" && -z "${ACTIONED_THIS_RUN[$ip]+x}" ]] && ! is_ip_or_subnet_banned "$ip"; then
+        ACTIONED_THIS_RUN["$ip"]=1
+        ban_ip32 "$ROOT_DIR" "$ip"
+    fi
+done < <(
+    for f in "${log_files[@]}"; do
+        if [[ "$f" == *.gz ]]; then gzip -cd "$f" || true; else sed -n '1,$ p' "$f"; fi
+    done | awk '
+    {
+        ip=$1; path="-"; ua="-"
+        if (match($0, /"[A-Z]+ ([^ ]+) HTTP\/[0-9.]+"/, req)) path=req[1]
+        if (match($0, /"([^"]*)"$/, a)) ua=a[1]
+        print ip "\t" path "\t" ua
+    }'
+)
+
+for subnet in "${!SUBNET_COUNT[@]}"; do
+    count="${SUBNET_COUNT[$subnet]}"
+    (( count > SUBNET_THRESHOLD )) || continue
+
+    if [[ "$SUBNET_PROMOTION" == "on" ]] && ! is_ip_or_subnet_banned "$subnet"; then
+        "$ROOT_DIR/cli/perm-ban" "$subnet" >/dev/null 2>&1 || true
+        removed_count="$(remove_covered_ip32_bans "$ROOT_DIR" "$subnet")"
+    else
+        removed_count=0
+    fi
+
+    if [[ "$SUBNET_SCAN_LOG" == "on" ]]; then
+        ts="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+        printf '%s subnet=%s unique_ips=%s removed_ip32=%s\n' "$ts" "$subnet" "$count" "$removed_count" >> "$SUBNET_PROMOTION_LOG"
+    fi
+done
+
+hostname_cache_save "$HOSTNAME_CACHE_FILE"

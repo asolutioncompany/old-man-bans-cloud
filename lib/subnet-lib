@@ -1,5 +1,5 @@
 #!/bin/bash
-# subnet-promote-lib - shared helpers for /24 subnet promotion.
+# subnet-lib - shared helpers for /24 subnet promotion.
 
 ipv4_to_subnet24() {
     local ip="$1"

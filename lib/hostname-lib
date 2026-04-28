@@ -1,5 +1,5 @@
 #!/bin/bash
-# hostname-lookup-lib - persistent hostname lookup cache helpers.
+# hostname-lib - persistent hostname lookup cache helpers.
 
 declare -gA HOSTNAME_CACHE
 

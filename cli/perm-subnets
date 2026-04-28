@@ -1,5 +1,5 @@
 #!/bin/bash
-# subnet-promote - Promote dense /32 bans into /24 subnet bans.
+# perm-subnets - Promote dense /32 bans into /24 subnet bans.
 
 set -euo pipefail
 
@@ -9,7 +9,7 @@ fi
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck disable=SC1091
-source "$ROOT_DIR/lib/subnet-promote-lib"
+source "$ROOT_DIR/lib/subnet-lib"
 
 SUBNET_THRESHOLD_DEFAULT=10
 GLOBAL_CONFIG_FILE="$ROOT_DIR/config/old-man-bans-cloud.local"

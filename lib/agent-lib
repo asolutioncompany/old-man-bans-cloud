@@ -1,0 +1,55 @@
+#!/bin/bash
+# agent-lib - shared helpers for agent token checks/logging.
+
+to_lower() {
+    echo "$1" | tr '[:upper:]' '[:lower:]'
+}
+
+load_tokens() {
+    local file="$1"
+    local -n out_ref="$2"
+    out_ref=()
+    [[ -f "$file" ]] || return 0
+
+    local raw
+    raw="$(tr -d '\n' < "$file")"
+    raw="${raw// /}"
+    IFS='|' read -r -a out_ref <<< "$raw"
+}
+
+contains_any_token() {
+    local haystack
+    haystack="$(to_lower "$1")"
+    shift
+    local token
+    for token in "$@"; do
+        [[ -z "$token" ]] && continue
+        local token_lc
+        token_lc="$(to_lower "$token")"
+        if [[ "$haystack" == *"$token_lc"* ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+append_unique_line() {
+    local file="$1"
+    local line="$2"
+    touch "$file"
+    if ! grep -F -x -q -- "$line" "$file"; then
+        echo "$line" >> "$file"
+    fi
+}
+
+is_allowlisted_event() {
+    local ip="$1"
+    local hostname="$2"
+    local agent="$3"
+    local -n good_agents_ref="$4"
+    local -n good_hostnames_ref="$5"
+
+    contains_any_token "$agent" "${good_agents_ref[@]}" || \
+    contains_any_token "$hostname" "${good_agents_ref[@]}" || \
+    contains_any_token "$ip $hostname" "${good_hostnames_ref[@]}"
+}

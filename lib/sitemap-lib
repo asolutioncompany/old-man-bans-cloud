@@ -1,0 +1,8 @@
+#!/bin/bash
+# sitemap-lib - shared helpers for sitemap/path token checks.
+
+sitemap_path_matches() {
+    local path="$1"
+    shift
+    contains_any_token "$path" "$@"
+}
