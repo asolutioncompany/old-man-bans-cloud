@@ -26,7 +26,7 @@ SITEMAP_SCAN_LOG=on
 SITEMAP_SCAN_BAN=on
 
 # Subnet promotion actions (on|off).
-SUBNET_SCAN_LOG=on
+SUBNET_PROMOTION_LOG=on
 SUBNET_PROMOTION=on
 
 # Promote subnet when unique IPs in /24 are greater than threshold.

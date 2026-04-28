@@ -68,7 +68,7 @@ Config files:
   - `AGENT_SCAN_BAN=on|off` (default `on`)
   - `SITEMAP_SCAN_LOG=on|off` (default `on`)
   - `SITEMAP_SCAN_BAN=on|off` (default `on`)
-  - `SUBNET_SCAN_LOG=on|off` (default `on`)
+  - `SUBNET_PROMOTION_LOG=on|off` (default `on`)
   - `SUBNET_PROMOTION=on|off` (default `on`)
   - `SUBNET_THRESHOLD=10` (promote to `/24` when unique IP count is greater than this value)
 - `config/bad-hostnames.local`: `|`-delimited ban tokens for host/IP text
@@ -114,6 +114,12 @@ Add `cli/` to your `PATH` (so commands can be run without `cli/` prefix):
 ```bash
 echo 'export PATH="$PATH:/home/ubuntu/old-man-bans-cloud/cli"' >> ~/.bashrc
 source ~/.bashrc
+```
+
+You can export current bans using `perm-list`, for example:
+
+```bash
+cli/perm-list > logs/perm-list-export.log
 ```
 
 ## Cron Setup
@@ -188,7 +194,7 @@ to run every 6 days.
 - Promotes when unique IPs in a subnet are greater than `SUBNET_THRESHOLD`
 - Removes covered `/32` bans after subnet promotion
 - Controlled by:
-  - `SUBNET_SCAN_LOG=on|off`
+  - `SUBNET_PROMOTION_LOG=on|off`
   - `SUBNET_PROMOTION=on|off`
 
 Use `perm-subnets` for automatic threshold-based promotions. For manual
@@ -202,6 +208,21 @@ Hostname placeholders used in logs:
 - `-` when hostname is not identified
 - `-TIMEOUT-` when DNS lookup times out
 
+## Analyzer Output Logs
+
+- `logs/host-ban-log`: host/cloud match events
+- `logs/agent-ban-log`: agent match events
+- `logs/unique-agent-log`: unique discovered agent strings
+- `logs/sitemap-ban-log`: sitemap-matched events considered for subnet promotion
+- `logs/subnet-promotion-log`: subnet promotions (`subnet`, unique-ip count, removed `/32` count)
+
+Ban-event logs use format:
+  - `timestamp ip hostname agent-string`
+  - columns are space-delimited; parse first three fields as timestamp, IP, hostname
+
+If `*_LOG=off`, no log is written.
+If `*_BAN=off`, no ban is executed.
+
 ## Considerations
 
 `SUBNET_THRESHOLD` is inherently an arbitrary value. You should decide what
@@ -213,17 +234,14 @@ ban/promotion settings off, then reviewing logged events before applying manual
 bans and subnet promotions. This is a safer approach when tuning initial rules
 or operating in environments with mixed legitimate bot traffic.
 
-## Analyzer Output Logs
+Daily and weekly scans may require significant processing on large sites,
+especially when many DNS lookups are performed. Cached hostname lookups help,
+but lookup-heavy workflows can still be costly at scale.
 
-- `logs/host-ban-log`: host/cloud match events
-- `logs/agent-ban-log`: agent match events
-- `logs/agent-unique-log`: unique discovered agent strings
-- `logs/sitemap-ban-log`: sitemap-matched events considered for subnet promotion
-- `logs/subnet-promotion-log`: subnet promotions (`subnet`, unique-ip count, removed `/32` count)
+For larger environments, geolocation databases or ASN/ARIN-style network-owner
+data may be a more efficient and stable signal than repeated reverse-DNS
+lookups alone.
 
-Ban-event logs use format:
-  - `timestamp ip hostname agent-string`
-  - columns are space-delimited; parse first three fields as timestamp, IP, hostname
-
-If `*_LOG=off`, no log is written.
-If `*_BAN=off`, no ban is executed.
+Implementing ban expiration (time-based unban after a long period) should be
+considered so that bans can decay over time instead of remaining permanent
+forever.

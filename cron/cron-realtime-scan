@@ -31,7 +31,7 @@ LOCK_FILE="$LOGS_DIR/realtime-scan.lock"
 HOSTNAME_CACHE_FILE="$LOGS_DIR/hostname-cache.tsv"
 HOST_BAN_LOG="$LOGS_DIR/host-ban-log"
 AGENT_BAN_LOG="$LOGS_DIR/agent-ban-log"
-AGENT_UNIQUE_LOG="$LOGS_DIR/agent-unique-log"
+AGENT_UNIQUE_LOG="$LOGS_DIR/unique-agent-log"
 SITEMAP_BAN_LOG="$LOGS_DIR/sitemap-ban-log"
 
 load_config_if_exists "$ROOT_DIR/config/old-man-bans-cloud.local"

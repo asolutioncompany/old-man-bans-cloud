@@ -24,7 +24,7 @@ AGENT_SCAN_LOG_DEFAULT="on"
 AGENT_SCAN_BAN_DEFAULT="on"
 SITEMAP_SCAN_LOG_DEFAULT="on"
 SITEMAP_SCAN_BAN_DEFAULT="on"
-SUBNET_SCAN_LOG_DEFAULT="on"
+SUBNET_PROMOTION_LOG_DEFAULT="on"
 SUBNET_PROMOTION_DEFAULT="on"
 SUBNET_THRESHOLD_DEFAULT=10
 
@@ -35,9 +35,9 @@ LOCK_FILE="$LOGS_DIR/daily-scan.lock"
 HOSTNAME_CACHE_FILE="$LOGS_DIR/hostname-cache.tsv"
 HOST_BAN_LOG="$LOGS_DIR/host-ban-log"
 AGENT_BAN_LOG="$LOGS_DIR/agent-ban-log"
-AGENT_UNIQUE_LOG="$LOGS_DIR/agent-unique-log"
+AGENT_UNIQUE_LOG="$LOGS_DIR/unique-agent-log"
 SITEMAP_BAN_LOG="$LOGS_DIR/sitemap-ban-log"
-SUBNET_PROMOTION_LOG="$LOGS_DIR/subnet-promotion-log"
+SUBNET_PROMOTION_LOG_FILE="$LOGS_DIR/subnet-promotion-log"
 
 load_config_if_exists "$ROOT_DIR/config/old-man-bans-cloud.local"
 
@@ -50,7 +50,7 @@ AGENT_SCAN_LOG="${AGENT_SCAN_LOG:-$AGENT_SCAN_LOG_DEFAULT}"
 AGENT_SCAN_BAN="${AGENT_SCAN_BAN:-$AGENT_SCAN_BAN_DEFAULT}"
 SITEMAP_SCAN_LOG="${SITEMAP_SCAN_LOG:-$SITEMAP_SCAN_LOG_DEFAULT}"
 SITEMAP_SCAN_BAN="${SITEMAP_SCAN_BAN:-$SITEMAP_SCAN_BAN_DEFAULT}"
-SUBNET_SCAN_LOG="${SUBNET_SCAN_LOG:-$SUBNET_SCAN_LOG_DEFAULT}"
+SUBNET_PROMOTION_LOG="${SUBNET_PROMOTION_LOG:-$SUBNET_PROMOTION_LOG_DEFAULT}"
 SUBNET_PROMOTION="${SUBNET_PROMOTION:-$SUBNET_PROMOTION_DEFAULT}"
 SUBNET_THRESHOLD="${SUBNET_THRESHOLD:-$SUBNET_THRESHOLD_DEFAULT}"
 
@@ -60,7 +60,7 @@ validate_on_off "AGENT_SCAN_LOG" "$AGENT_SCAN_LOG"
 validate_on_off "AGENT_SCAN_BAN" "$AGENT_SCAN_BAN"
 validate_on_off "SITEMAP_SCAN_LOG" "$SITEMAP_SCAN_LOG"
 validate_on_off "SITEMAP_SCAN_BAN" "$SITEMAP_SCAN_BAN"
-validate_on_off "SUBNET_SCAN_LOG" "$SUBNET_SCAN_LOG"
+validate_on_off "SUBNET_PROMOTION_LOG" "$SUBNET_PROMOTION_LOG"
 validate_on_off "SUBNET_PROMOTION" "$SUBNET_PROMOTION"
 [[ "$SUBNET_THRESHOLD" =~ ^[0-9]+$ ]] || { echo "SUBNET_THRESHOLD must be an integer." >&2; exit 1; }
 
@@ -137,9 +137,9 @@ for subnet in "${!SUBNET_COUNT[@]}"; do
     else
         removed_count=0
     fi
-    if [[ "$SUBNET_SCAN_LOG" == "on" ]]; then
+    if [[ "$SUBNET_PROMOTION_LOG" == "on" ]]; then
         ts="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-        printf '%s subnet=%s unique_ips=%s removed_ip32=%s\n' "$ts" "$subnet" "$count" "$removed_count" >> "$SUBNET_PROMOTION_LOG"
+        printf '%s subnet=%s unique_ips=%s removed_ip32=%s\n' "$ts" "$subnet" "$count" "$removed_count" >> "$SUBNET_PROMOTION_LOG_FILE"
     fi
 done
 
