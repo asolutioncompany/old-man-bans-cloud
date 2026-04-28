@@ -1,0 +1,33 @@
+# Copy to old-man-bans-cloud.local and customize.
+# Example:
+#   cp ./config/old-man-bans-cloud.local.example ./config/old-man-bans-cloud.local
+
+# Access log location (nginx defaults).
+LOG_DIR=/var/log/nginx
+ACCESS_LOG_BASENAME=access.log
+# Daily scan reads yesterday's rotated log: ${ACCESS_LOG_BASENAME}.1
+
+# Optional site-specific example:
+# LOG_DIR=/var/www/my-site-logs
+
+# DNS reverse lookup timeout in seconds.
+DNS_TIMEOUT_SECONDS=3
+
+# Host scan actions (on|off).
+HOST_SCAN_LOG=on
+HOST_SCAN_BAN=on
+
+# Agent scan actions (on|off).
+AGENT_SCAN_LOG=on
+AGENT_SCAN_BAN=on
+
+# Sitemap scan actions (on|off).
+SITEMAP_SCAN_LOG=on
+SITEMAP_SCAN_BAN=on
+
+# Subnet promotion actions (on|off).
+SUBNET_SCAN_LOG=on
+SUBNET_SCAN_BAN=on
+
+# Promote subnet when unique IPs in /24 are greater than threshold.
+SUBNET_THRESHOLD=10

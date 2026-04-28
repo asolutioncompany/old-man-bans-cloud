@@ -1,0 +1,38 @@
+#!/bin/bash
+# subnet-promote-lib - shared helpers for /24 subnet promotion.
+
+ipv4_to_subnet24() {
+    local ip="$1"
+    if [[ "$ip" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.[0-9]{1,3}$ ]]; then
+        echo "${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}.0/24"
+        return 0
+    fi
+    return 1
+}
+
+ip_in_subnet24() {
+    local ip="$1"
+    local subnet="$2"
+    [[ "$subnet" =~ ^([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})\.0/24$ ]] || return 1
+    local subnet_prefix="${BASH_REMATCH[1]}"
+    [[ "$ip" =~ ^${subnet_prefix//./\\.}\.[0-9]{1,3}$ ]]
+}
+
+remove_covered_ip32_bans() {
+    local root_dir="$1"
+    local subnet="$2"
+    local removed=0
+    local entry
+
+    while IFS= read -r entry; do
+        [[ "$entry" =~ /32$ ]] || continue
+        local ip="${entry%/32}"
+        if ip_in_subnet24 "$ip" "$subnet"; then
+            if "$root_dir/cli/perm-unban" "$entry" >/dev/null 2>&1; then
+                removed=$((removed + 1))
+            fi
+        fi
+    done < <(ipset list badnets_perm 2>/dev/null | sed -n '/^Members:/,$ p' | tail -n +2)
+
+    echo "$removed"
+}

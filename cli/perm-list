@@ -1,0 +1,22 @@
+#!/bin/bash
+# perm-list - Show all permanently banned entries
+
+if [[ $EUID -ne 0 ]]; then
+    exec sudo "$0"
+fi
+
+if ! ipset list badnets_perm &>/dev/null; then
+    echo "No permanent bans (set badnets_perm does not exist)."
+    exit 0
+fi
+
+echo "Permanent bans:"
+ipset list badnets_perm | sed -n '/^Members:/,$ p' | tail -n +2 | awk '
+{
+    # Normalize singleton IPv4 entries to /32 for portable backups.
+    if ($0 !~ /\// && $0 ~ /^([0-9]{1,3}\.){3}[0-9]{1,3}$/) {
+        print $0 "/32"
+    } else {
+        print $0
+    }
+}'

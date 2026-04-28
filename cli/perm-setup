@@ -1,0 +1,43 @@
+#!/bin/bash
+# perm-setup - One-time setup for badnets_perm + INPUT drop rule
+
+set -euo pipefail
+
+if [[ $EUID -ne 0 ]]; then
+    exec sudo "$0" "$@"
+fi
+
+if ! command -v ipset >/dev/null 2>&1; then
+    echo "ipset is required but not installed." >&2
+    exit 1
+fi
+
+if ! command -v iptables >/dev/null 2>&1; then
+    echo "iptables is required but not installed." >&2
+    exit 1
+fi
+
+if ! ipset list badnets_perm >/dev/null 2>&1; then
+    ipset create badnets_perm hash:net
+    echo "Created ipset: badnets_perm"
+else
+    echo "ipset already exists: badnets_perm"
+fi
+
+if ! iptables -C INPUT -m set --match-set badnets_perm src -j DROP >/dev/null 2>&1; then
+    iptables -I INPUT 1 -m set --match-set badnets_perm src -j DROP
+    echo "Inserted INPUT drop rule for badnets_perm"
+else
+    echo "INPUT drop rule already exists"
+fi
+
+if command -v netfilter-persistent >/dev/null 2>&1; then
+    netfilter-persistent save
+    echo "Saved current firewall state with netfilter-persistent."
+else
+    echo "netfilter-persistent not found."
+    echo "On Debian/Ubuntu, install with:"
+    echo "  sudo apt-get update && sudo apt-get install -y iptables-persistent"
+fi
+
+echo "One-time setup complete."

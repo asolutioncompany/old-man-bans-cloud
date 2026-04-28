@@ -1,0 +1,3 @@
+# Pipe-delimited list of bad cloud/hosting markers.
+# Matches against resolved hostname (and IP text).
+googleusercontent|azure|cnsat|your-server|contaboserver|myconvento|digimobil|opoint|acedatecenter/lolocross|colocationamerica|amazonaws|hwclouds|digitalocean|semantic-visions|viettel|ic2net

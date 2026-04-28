@@ -1,0 +1,203 @@
+#!/bin/bash
+# daily-scan - Daily scan of yesterday access log.
+
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck disable=SC1091
+source "$ROOT_DIR/lib/hostname-lookup-lib"
+LOG_DIR_DEFAULT="/var/log/nginx"
+ACCESS_LOG_BASENAME_DEFAULT="access.log"
+DNS_TIMEOUT_SECONDS_DEFAULT=3
+AGENT_SCAN_LOG_DEFAULT="on"
+AGENT_SCAN_BAN_DEFAULT="on"
+
+LOGS_DIR="$ROOT_DIR/logs"
+mkdir -p "$LOGS_DIR"
+
+LOCK_FILE="$LOGS_DIR/daily-scan.lock"
+DAILY_AGENT_BAN_LOG="$LOGS_DIR/daily-agent-ban-log"
+DAILY_AGENT_LOG="$LOGS_DIR/daily-agent-log"
+HOSTNAME_CACHE_FILE="$LOGS_DIR/hostname-cache.tsv"
+
+GLOBAL_CONFIG_FILE="$ROOT_DIR/config/old-man-bans-cloud.local"
+if [[ -f "$GLOBAL_CONFIG_FILE" ]]; then
+    # shellcheck disable=SC1090
+    source "$GLOBAL_CONFIG_FILE"
+fi
+
+LOG_DIR="${LOG_DIR:-$LOG_DIR_DEFAULT}"
+ACCESS_LOG_BASENAME="${ACCESS_LOG_BASENAME:-$ACCESS_LOG_BASENAME_DEFAULT}"
+DNS_TIMEOUT_SECONDS="${DNS_TIMEOUT_SECONDS:-$DNS_TIMEOUT_SECONDS_DEFAULT}"
+AGENT_SCAN_LOG="${AGENT_SCAN_LOG:-$AGENT_SCAN_LOG_DEFAULT}"
+AGENT_SCAN_BAN="${AGENT_SCAN_BAN:-$AGENT_SCAN_BAN_DEFAULT}"
+
+YESTERDAY_LOG_PATH="$LOG_DIR/$ACCESS_LOG_BASENAME.1"
+
+if [[ ! -f "$YESTERDAY_LOG_PATH" ]]; then
+    echo "Yesterday log not found: $YESTERDAY_LOG_PATH" >&2
+    exit 1
+fi
+
+if [[ ! "$AGENT_SCAN_LOG" =~ ^(on|off)$ ]]; then
+    echo "AGENT_SCAN_LOG must be 'on' or 'off'." >&2
+    exit 1
+fi
+if [[ ! "$AGENT_SCAN_BAN" =~ ^(on|off)$ ]]; then
+    echo "AGENT_SCAN_BAN must be 'on' or 'off'." >&2
+    exit 1
+fi
+
+if [[ "$AGENT_SCAN_LOG" == "off" && "$AGENT_SCAN_BAN" == "off" ]]; then
+    echo "AGENT_SCAN_LOG and AGENT_SCAN_BAN are both off; exiting."
+    exit 0
+fi
+
+to_lower() {
+    echo "$1" | tr '[:upper:]' '[:lower:]'
+}
+
+load_tokens() {
+    local file="$1"
+    local -n out_ref="$2"
+    out_ref=()
+    [[ -f "$file" ]] || return 0
+
+    local raw
+    raw="$(tr -d '\n' < "$file")"
+    raw="${raw// /}"
+    IFS='|' read -r -a out_ref <<< "$raw"
+}
+
+contains_any_token() {
+    local haystack
+    haystack="$(to_lower "$1")"
+    shift
+    local token
+    for token in "$@"; do
+        [[ -z "$token" ]] && continue
+        local token_lc
+        token_lc="$(to_lower "$token")"
+        if [[ "$haystack" == *"$token_lc"* ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+resolve_hostname() {
+    local ip="$1"
+    local host_out
+
+    if host_out="$(timeout "${DNS_TIMEOUT_SECONDS}s" host "$ip" 2>/dev/null)"; then
+        if [[ "$host_out" =~ pointer[[:space:]]+([^[:space:]]+)\.?$ ]]; then
+            echo "${BASH_REMATCH[1]}"
+            return 0
+        fi
+    else
+        local rc=$?
+        if [[ $rc -eq 124 ]]; then
+            echo "-TIMEOUT-"
+            return 0
+        fi
+    fi
+
+    if host_out="$(timeout "${DNS_TIMEOUT_SECONDS}s" dig +short -x "$ip" 2>/dev/null)"; then
+        local ptr
+        ptr="$(echo "$host_out" | sed '/^[[:space:]]*$/d' | sed -n '1p' | sed 's/\.$//')"
+        if [[ -n "$ptr" ]]; then
+            echo "$ptr"
+            return 0
+        fi
+    else
+        local rc=$?
+        if [[ $rc -eq 124 ]]; then
+            echo "-TIMEOUT-"
+            return 0
+        fi
+    fi
+
+    echo "-"
+}
+
+log_daily_agent_unique() {
+    local agent="$1"
+    touch "$DAILY_AGENT_LOG"
+    if ! grep -F -x -q -- "$agent" "$DAILY_AGENT_LOG"; then
+        echo "$agent" >> "$DAILY_AGENT_LOG"
+    fi
+}
+
+log_daily_agent_ban_event() {
+    local timestamp="$1"
+    local ip="$2"
+    local hostname="$3"
+    local agent="$4"
+    printf '%s %s %s %s\n' "$timestamp" "$ip" "$hostname" "$agent" >> "$DAILY_AGENT_BAN_LOG"
+}
+
+ban_ip() {
+    local ip="$1"
+    "$ROOT_DIR/cli/perm-ban" "$ip/32" >/dev/null 2>&1 || true
+}
+
+declare -a BAD_AGENTS GOOD_AGENTS GOOD_CLOUDS
+load_tokens "$ROOT_DIR/config/bad-agents.local" BAD_AGENTS
+load_tokens "$ROOT_DIR/config/good-agents.local" GOOD_AGENTS
+load_tokens "$ROOT_DIR/config/good-clouds.local" GOOD_CLOUDS
+
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+    echo "Another daily scan is currently running; exiting."
+    exit 0
+fi
+
+declare -A ACTIONED_THIS_RUN
+hostname_cache_load "$HOSTNAME_CACHE_FILE"
+
+while IFS=$'\t' read -r ip agent; do
+    [[ -z "$ip" ]] && continue
+
+    if contains_any_token "$agent" "${GOOD_AGENTS[@]}" || contains_any_token "$ip" "${GOOD_CLOUDS[@]}"; then
+        continue
+    fi
+    if ! contains_any_token "$agent" "${BAD_AGENTS[@]}"; then
+        continue
+    fi
+
+    hostname="$(hostname_cache_get "$ip" "$DNS_TIMEOUT_SECONDS")"
+
+    if contains_any_token "$hostname" "${GOOD_AGENTS[@]}" || contains_any_token "$ip $hostname" "${GOOD_CLOUDS[@]}"; then
+        continue
+    fi
+
+    timestamp="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+    if [[ "$AGENT_SCAN_LOG" == "on" ]]; then
+        log_daily_agent_unique "$agent"
+    fi
+
+    if [[ -z "${ACTIONED_THIS_RUN[$ip]+x}" ]]; then
+        if ipset test badnets_perm "$ip" >/dev/null 2>&1; then
+            continue
+        fi
+        ACTIONED_THIS_RUN[$ip]=1
+        if [[ "$AGENT_SCAN_BAN" == "on" ]]; then
+            ban_ip "$ip"
+        fi
+        if [[ "$AGENT_SCAN_LOG" == "on" ]]; then
+            log_daily_agent_ban_event "$timestamp" "$ip" "$hostname" "$agent"
+        fi
+    fi
+done < <(
+    awk '
+    {
+        ip=$1
+        ua="-"
+        if (match($0, /"([^"]*)"$/, a)) {
+            ua=a[1]
+        }
+        print ip "\t" ua
+    }' "$YESTERDAY_LOG_PATH"
+)
+
+hostname_cache_save "$HOSTNAME_CACHE_FILE"

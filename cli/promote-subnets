@@ -1,0 +1,50 @@
+#!/bin/bash
+# subnet-promote - Promote dense /32 bans into /24 subnet bans.
+
+set -euo pipefail
+
+if [[ $EUID -ne 0 ]]; then
+    exec sudo "$0" "$@"
+fi
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck disable=SC1091
+source "$ROOT_DIR/lib/subnet-promote-lib"
+
+SUBNET_THRESHOLD_DEFAULT=10
+GLOBAL_CONFIG_FILE="$ROOT_DIR/config/old-man-bans-cloud.local"
+
+if [[ -f "$GLOBAL_CONFIG_FILE" ]]; then
+    # shellcheck disable=SC1090
+    source "$GLOBAL_CONFIG_FILE"
+fi
+
+SUBNET_THRESHOLD="${SUBNET_THRESHOLD:-$SUBNET_THRESHOLD_DEFAULT}"
+
+if [[ ! "$SUBNET_THRESHOLD" =~ ^[0-9]+$ ]]; then
+    echo "SUBNET_THRESHOLD must be an integer." >&2
+    exit 1
+fi
+
+declare -A SUBNET_COUNT
+declare -A SUBNET_IPS
+
+while IFS= read -r entry; do
+    [[ "$entry" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/32$ ]] || continue
+    ip="${entry%/32}"
+    subnet="$(ipv4_to_subnet24 "$ip" || true)"
+    [[ -z "$subnet" ]] && continue
+    SUBNET_COUNT[$subnet]=$(( ${SUBNET_COUNT[$subnet]:-0} + 1 ))
+    SUBNET_IPS[$subnet]="${SUBNET_IPS[$subnet]:-} $entry"
+done < <("$ROOT_DIR/cli/perm-list" | sed '1d')
+
+for subnet in "${!SUBNET_COUNT[@]}"; do
+    count="${SUBNET_COUNT[$subnet]}"
+    if (( count <= SUBNET_THRESHOLD )); then
+        continue
+    fi
+
+    "$ROOT_DIR/cli/perm-ban" "$subnet" >/dev/null 2>&1 || true
+    removed_count="$(remove_covered_ip32_bans "$ROOT_DIR" "$subnet")"
+    echo "Promoted $subnet from $count IP bans; removed $removed_count covered /32 entries."
+done
