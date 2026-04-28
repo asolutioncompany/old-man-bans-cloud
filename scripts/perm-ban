@@ -1,0 +1,31 @@
+#!/bin/bash
+# perm-ban - Add IPs/CIDRs to permanent ban list
+# Examples:
+#   perm-ban 192.168.1.128/32        # single IP
+#   perm-ban 191.168.1.0/24          # subnet
+#   perm-ban 10.0.0.1/32 192.168.2.0/24
+
+set -e
+
+if [[ $EUID -ne 0 ]]; then
+    exec sudo "$0" "$@"
+fi
+
+# Create ipset if missing
+if ! ipset list badnets_perm &>/dev/null; then
+    ipset create badnets_perm hash:net
+    iptables -I INPUT 1 -m set --match-set badnets_perm src -j DROP
+    echo "Created ipset badnets_perm and added iptables DROP rule."
+fi
+
+for entry in "$@"; do
+    # Normalize: ensure /32 is preserved (ipset accepts it)
+    if ipset add badnets_perm "$entry" 2>/dev/null; then
+        echo "Banned: $entry"
+    else
+        echo "Already banned or invalid: $entry"
+    fi
+done
+
+netfilter-persistent save >/dev/null 2>&1
+echo "Persisted."

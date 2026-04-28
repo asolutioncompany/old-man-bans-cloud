@@ -1,0 +1,27 @@
+#!/bin/bash
+# perm-unban - Remove IPs/CIDRs from permanent ban list
+# Examples:
+#   perm-unban 192.168.1.128/32
+#   perm-unban 191.168.1.0/24
+
+set -e
+
+if [[ $EUID -ne 0 ]]; then
+    exec sudo "$0" "$@"
+fi
+
+if ! ipset list badnets_perm &>/dev/null; then
+    echo "Error: badnets_perm does not exist." >&2
+    exit 1
+fi
+
+for entry in "$@"; do
+    if ipset del badnets_perm "$entry" 2>/dev/null; then
+        echo "Removed: $entry"
+    else
+        echo "Not found or invalid: $entry"
+    fi
+done
+
+netfilter-persistent save >/dev/null 2>&1
+echo "Persisted."
