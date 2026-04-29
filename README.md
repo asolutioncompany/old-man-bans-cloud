@@ -34,10 +34,17 @@ sudo apt-get install -y ipset iptables iptables-persistent dnsutils
 
 ## Initial Firewall Setup
 
+Add `cli/` to your `PATH` (so commands can be run without `cli/` prefix):
+
+```bash
+echo 'export PATH="$PATH:/home/ubuntu/old-man-bans-cloud/cli"' >> ~/.bashrc
+source ~/.bashrc
+```
+
 Run once to initialize `badnets_perm` and INPUT drop rule:
 
 ```bash
-cli/perm-setup
+perm-setup
 ```
 
 ## Analyzer Configuration
@@ -45,15 +52,6 @@ cli/perm-setup
 Defaults are loaded from `config/old-man-bans-cloud.conf`.
 To override values, add one or more `config/*.local` files (any filename ending in
 `.local`). Local files are loaded after `.conf` files, so local values win.
-
-Example:
-
-```bash
-cat > ./config/site.local <<'EOF'
-LOG_DIR=/var/www/my-site-logs
-SUBNET_THRESHOLD=15
-EOF
-```
 
 Config files:
 
@@ -81,8 +79,6 @@ Config files:
   - Token overrides are complete replacement values, not merge/append behavior.
     For example, setting `BAD_HOSTNAMES=example.com` in a `.local` file means only
     `example.com` is searched and default `BAD_HOSTNAMES` values are ignored.
-  - Pipe-delimited token example:
-    `BAD_HOSTNAMES=example.com|example.net`.
 
 Global allowlists (`GOOD_HOSTNAMES`, `GOOD_AGENTS`) are applied to
 hostname, agent, and sitemap scans.
@@ -116,17 +112,10 @@ Matching behavior summary:
 - `perm-scan-today`: run realtime scan once (current log interval)
 - `perm-scan-yesterday`: run daily scan once (`access.log.1`)
 
-Add `cli/` to your `PATH` (so commands can be run without `cli/` prefix):
-
-```bash
-echo 'export PATH="$PATH:/home/ubuntu/old-man-bans-cloud/cli"' >> ~/.bashrc
-source ~/.bashrc
-```
-
 You can export current bans using `perm-list`, for example:
 
 ```bash
-cli/perm-list > logs/perm-list-export.log
+perm-list > logs/perm-list-export.log
 ```
 
 ## Cron Setup
@@ -230,9 +219,9 @@ Ban-event logs use format:
 If `*_LOG=off`, no log is written.
 If `*_BAN=off`, no ban is executed.
 
-## Subnet Detection
+## Considerations for Subnet Detection
 
-There are good subnets and bad ones. Examples of good botnets would be GoogleBot and a corporate network using your website for it's intended function. You generally want to allow this activity, and these types of botnets need to be configured to avoid automatic banning.
+There are good subnets and bad ones. Examples of good subnets would be GoogleBot and a corporate network using your website for it's intended function. You generally want to allow this activity, and these types of botnets need to be configured to avoid automatic banning.
 
 There are several types of botnets, but for large websites with large amounts of data, the general purpose is for data mining. The troublesome botnets are the ones which use a large number of IP addresses to mine your site, hiding in access logs as low volume activity, when as a whole, they are hammering your website.
 
@@ -242,7 +231,9 @@ One concern is corporate use where users might each have their own IP address. A
 
 Therefore, it is recommended to set a higher thresold.
 
-The sitemap detection was added as a good way to detect botnets being used for data mining. Large websites will have several sitemaps and botnets will hit these sitemaps from several IP addresses within a day, making it easy to detect and stop botnets performing data mining. It is also fairly safe to assume any access of your sitemap is likely from a bot performing data mining.
+The sitemap detection was added as a good way to detect data mining botnets. Large websites will have several sitemaps and botnets will hit these sitemaps from several IP addresses within a day, making it easy to detect and stop botnets performing data mining. It is also fairly safe to assume any access of your sitemap is likely from a bot performing data mining.
+
+Just be aware that you will likely be blocking lesser known search engines and other possible ethical data mining where content is sourced.
 
 ## Other Considerations
 
