@@ -227,9 +227,9 @@ There are several types of botnets, but for large websites with large amounts of
 
 Google will only use 3 IP addresses to index a website, whereas as a large data mining operation will use hundreds from multiple subnets.
 
-One concern is corporate use where users might each have their own IP address. Another concern would be multiple users from an ISP being on the same subnet.
+One concern is corporate use where users might each have their own IP address. Another concern would be multiple users from a local ISP being on the same subnet for a localized website.
 
-Therefore, it is recommended to set a higher thresold.
+Therefore, it is recommended to set a higher thresold. It is also suggested to start with logging only to monitor for false positives in these situations. 10 is a good upper level thresold, but it still depends on the traffic.
 
 The sitemap detection was added as a good way to detect data mining botnets. Large websites will have several sitemaps and botnets will hit these sitemaps from several IP addresses within a day, making it easy to detect and stop botnets performing data mining. It is also fairly safe to assume any access of your sitemap is likely from a bot performing data mining.
 
