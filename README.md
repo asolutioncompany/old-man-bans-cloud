@@ -230,16 +230,21 @@ Ban-event logs use format:
 If `*_LOG=off`, no log is written.
 If `*_BAN=off`, no ban is executed.
 
-## Considerations
+## Subnet Detection
 
-`SUBNET_THRESHOLD` is inherently an arbitrary value. You should decide what
-unique-IP count in a `/24` is high enough to justify banning the entire subnet
-for your own traffic profile and false-positive tolerance.
+There are good subnets and bad ones. Examples of good botnets would be GoogleBot and a corporate network using your website for it's intended function. You generally want to allow this activity, and these types of botnets need to be configured to avoid automatic banning.
 
-You can also run in a manual-review mode by enabling log settings while keeping
-ban/promotion settings off, then reviewing logged events before applying manual
-bans and subnet promotions. This is a safer approach when tuning initial rules
-or operating in environments with mixed legitimate bot traffic.
+There are several types of botnets, but for large websites with large amounts of data, the general purpose is for data mining. The troublesome botnets are the ones which use a large number of IP addresses to mine your site, hiding in access logs as low volume activity, when as a whole, they are hammering your website.
+
+Google will only use 3 IP addresses to index a website, whereas as a large data mining operation will use hundreds from multiple subnets.
+
+One concern is corporate use where users might each have their own IP address. Another concern would be multiple users from an ISP being on the same subnet.
+
+Therefore, it is recommended to set a higher thresold.
+
+The sitemap detection was added as a good way to detect botnets being used for data mining. Large websites will have several sitemaps and botnets will hit these sitemaps from several IP addresses within a day, making it easy to detect and stop botnets performing data mining. It is also fairly safe to assume any access of your sitemap is likely from a bot performing data mining.
+
+## Other Considerations
 
 Daily and weekly scans may require significant processing on large sites,
 especially when many DNS lookups are performed. Cached hostname lookups help,
