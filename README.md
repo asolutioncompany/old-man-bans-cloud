@@ -4,12 +4,9 @@
 > This system has not yet been fully reviewed, refined, or tested. Treat current
 > scripts and configuration as work in progress.
 
-CLI + cron tooling for realtime, daily, and weekly nginx access-log scanning to
-automatically identify and ban IP addresses and botnet subnets based on
-hostnames, agent strings, and sitemap paths, backed by a persistent
-`ipset`/`iptables` ban list. It works like fail2ban, but adds cached hostname
-lookups and automatic subnet detection to handle problematic bots that are hard
-to detect without false positives.
+Ubuntu/Debian Nginx access log analyzer like fail2ban for automatic banning of IP addresses and subnets by agent string patterns, by resolved DNS names of virtual servers often used by vulnerability scanning, spam bots, and data mining bots, and by detection of botnets flooding systems with whole subnets for the purpose of data mining.
+
+It includes CLI and cron tooling for realtime, daily, and weekly nginx access-log scanning. It maintains persisted ipset/iptables to block traffic at the firewall before it reaches the webserver. Cached DNS lookups and automatic botnet detection are the stand out features.
 
 ## Project Layout
 
