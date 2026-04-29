@@ -1,3 +1,0 @@
-# Pipe-delimited allowlist for trusted IPs/hostnames.
-# Applied as a global allowlist to both agent and hostname scans.
-192.168.1.1|192.168.1.2|googlebot|applebot|search.msn.com|linkedin|fbsv|twttr

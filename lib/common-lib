@@ -9,6 +9,121 @@ load_config_if_exists() {
     fi
 }
 
+trim_whitespace() {
+    local s="$1"
+    s="${s#"${s%%[![:space:]]*}"}"
+    s="${s%"${s##*[![:space:]]}"}"
+    printf '%s' "$s"
+}
+
+parse_config_file() {
+    local file="$1"
+    local -n out_map="$2"
+    [[ -f "$file" ]] || return 0
+
+    local line stripped name value
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        stripped="${line%%#*}"
+        stripped="$(trim_whitespace "$stripped")"
+        [[ -n "$stripped" ]] || continue
+        [[ "$stripped" == *"="* ]] || continue
+
+        name="${stripped%%=*}"
+        value="${stripped#*=}"
+        name="$(trim_whitespace "$name")"
+        value="$(trim_whitespace "$value")"
+        [[ -n "$name" ]] || continue
+        out_map["$name"]="$value"
+    done < "$file"
+}
+
+apply_config_map() {
+    local -n cfg_map="$1"
+    local key
+    for key in "${!cfg_map[@]}"; do
+        printf -v "$key" '%s' "${cfg_map[$key]}"
+    done
+}
+
+load_config_layers() {
+    local config_dir="$1"
+    local -A merged_cfg=()
+    local file
+
+    for file in "$config_dir"/*.conf; do
+        [[ -f "$file" ]] || continue
+        parse_config_file "$file" merged_cfg
+    done
+
+    for file in "$config_dir"/*.local; do
+        [[ -f "$file" ]] || continue
+        parse_config_file "$file" merged_cfg
+    done
+
+    apply_config_map merged_cfg
+}
+
+split_pipe_values() {
+    local raw="$1"
+    local -n out_ref="$2"
+    out_ref=()
+    raw="$(echo "$raw" | tr -d '\n' | tr -d '\r')"
+    raw="${raw// /}"
+    [[ -n "$raw" ]] || return 0
+    IFS='|' read -r -a out_ref <<< "$raw"
+}
+
+split_whitespace_values_preserving_quotes() {
+    local raw="$1"
+    local -n out_ref="$2"
+    out_ref=()
+
+    local -a tokens=()
+    local token quote char
+    # shellcheck disable=SC2206
+    tokens=( $raw )
+
+    token=""
+    quote=""
+    for char in "${tokens[@]}"; do
+        if [[ -z "$quote" ]]; then
+            if [[ "$char" == \"* && "$char" != *\" ]]; then
+                token="$char"
+                quote='"'
+            elif [[ "$char" == \'* && "$char" != *\' ]]; then
+                token="$char"
+                quote="'"
+            else
+                out_ref+=( "$char" )
+            fi
+        else
+            token="$token $char"
+            if [[ "$char" == *"$quote" ]]; then
+                out_ref+=( "$token" )
+                token=""
+                quote=""
+            fi
+        fi
+    done
+
+    if [[ -n "$token" ]]; then
+        out_ref+=( "$token" )
+    fi
+}
+
+strip_wrapping_quotes() {
+    local value="$1"
+    if [[ "$value" == \"*\" && "$value" == *\" ]]; then
+        printf '%s' "${value:1:${#value}-2}"
+        return 0
+    fi
+    if [[ "$value" == \'*\' && "$value" == *\' ]]; then
+        printf '%s' "${value:1:${#value}-2}"
+        return 0
+    fi
+    printf '%s' "$value"
+}
+
 validate_on_off() {
     local name="$1"
     local value="$2"

@@ -17,6 +17,12 @@ load_tokens() {
     IFS='|' read -r -a out_ref <<< "$raw"
 }
 
+load_tokens_from_value() {
+    local raw="$1"
+    local -n out_ref="$2"
+    split_pipe_values "$raw" out_ref
+}
+
 contains_any_token() {
     local haystack
     haystack="$(to_lower "$1")"

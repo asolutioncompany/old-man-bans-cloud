@@ -39,7 +39,7 @@ AGENT_UNIQUE_LOG="$LOGS_DIR/unique-agent-log"
 SITEMAP_BAN_LOG="$LOGS_DIR/sitemap-ban-log"
 SUBNET_PROMOTION_LOG_FILE="$LOGS_DIR/subnet-promotion-log"
 
-load_config_if_exists "$ROOT_DIR/config/old-man-bans-cloud.local"
+load_config_layers "$ROOT_DIR/config"
 
 LOG_DIR="${LOG_DIR:-$LOG_DIR_DEFAULT}"
 ACCESS_LOG_BASENAME="${ACCESS_LOG_BASENAME:-$ACCESS_LOG_BASENAME_DEFAULT}"
@@ -65,17 +65,24 @@ validate_on_off "SUBNET_PROMOTION" "$SUBNET_PROMOTION"
 [[ "$SUBNET_THRESHOLD" =~ ^[0-9]+$ ]] || { echo "SUBNET_THRESHOLD must be an integer." >&2; exit 1; }
 
 declare -a BAD_HOSTNAMES GOOD_HOSTNAMES BAD_AGENTS GOOD_AGENTS SITEMAP_TOKENS
-load_tokens "$ROOT_DIR/config/bad-hostnames.local" BAD_HOSTNAMES
-load_tokens "$ROOT_DIR/config/good-hostnames.local" GOOD_HOSTNAMES
-load_tokens "$ROOT_DIR/config/bad-agents.local" BAD_AGENTS
-load_tokens "$ROOT_DIR/config/good-agents.local" GOOD_AGENTS
-load_tokens "$ROOT_DIR/config/sitemap.local" SITEMAP_TOKENS
+load_tokens_from_value "${BAD_HOSTNAMES:-}" BAD_HOSTNAMES
+load_tokens_from_value "${GOOD_HOSTNAMES:-}" GOOD_HOSTNAMES
+load_tokens_from_value "${BAD_AGENTS:-}" BAD_AGENTS
+load_tokens_from_value "${GOOD_AGENTS:-}" GOOD_AGENTS
+load_tokens_from_value "${SITEMAP_TOKENS:-}" SITEMAP_TOKENS
 
 exec 9>"$LOCK_FILE"
 flock -n 9 || { echo "Another weekly scan is currently running; exiting."; exit 0; }
 
+split_whitespace_values_preserving_quotes "$LOG_DIR" LOG_DIRS
+(( ${#LOG_DIRS[@]} > 0 )) || { echo "LOG_DIR must contain at least one directory." >&2; exit 1; }
+
 shopt -s nullglob
-log_files=( "$LOG_DIR/$ACCESS_LOG_BASENAME".[1-9]* "$LOG_DIR/$ACCESS_LOG_BASENAME".[1-9]*.gz )
+log_files=()
+for dir in "${LOG_DIRS[@]}"; do
+    dir_path="$(strip_wrapping_quotes "$dir")"
+    log_files+=( "$dir_path/$ACCESS_LOG_BASENAME".[1-9]* "$dir_path/$ACCESS_LOG_BASENAME".[1-9]*.gz )
+done
 shopt -u nullglob
 (( ${#log_files[@]} > 0 )) || { echo "No rotated logs found for weekly scan."; exit 0; }
 

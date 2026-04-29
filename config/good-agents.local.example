@@ -1,3 +1,0 @@
-# Pipe-delimited allowlist for known-good agent tokens.
-# Applied as a global allowlist to both agent and hostname scans.
-google|apple|bin|linkedin|facebook|twitter

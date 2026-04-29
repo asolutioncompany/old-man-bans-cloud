@@ -15,7 +15,7 @@ to detect without false positives.
 
 - `cli/`: user-invoked commands (add to `PATH`)
 - `cron/`: scheduled scanners (`cron-realtime-scan`, `cron-daily-scan`, `cron-weekly-scan`)
-- `config/`: user-owned `.local` configuration files
+- `config/`: main `.conf` defaults plus optional `.local` override files
 - `logs/`: runtime logs and scanner state files (created automatically)
 
 ## Prerequisites
@@ -45,21 +45,24 @@ cli/perm-setup
 
 ## Analyzer Configuration
 
-Create local config files from examples:
+Defaults are loaded from `config/old-man-bans-cloud.conf`.
+To override values, add one or more `config/*.local` files (any filename ending in
+`.local`). Local files are loaded after `.conf` files, so local values win.
+
+Example:
 
 ```bash
-cp ./config/old-man-bans-cloud.local.example ./config/old-man-bans-cloud.local
-cp ./config/bad-hostnames.local.example ./config/bad-hostnames.local
-cp ./config/good-hostnames.local.example ./config/good-hostnames.local
-cp ./config/bad-agents.local.example ./config/bad-agents.local
-cp ./config/good-agents.local.example ./config/good-agents.local
-cp ./config/sitemap.local.example ./config/sitemap.local
+cat > ./config/site.local <<'EOF'
+LOG_DIR=/var/www/my-site-logs
+SUBNET_THRESHOLD=15
+EOF
 ```
 
 Config files:
 
-- `config/old-man-bans-cloud.local`
+- `config/old-man-bans-cloud.conf`
   - `LOG_DIR` (default `/var/log/nginx`)
+    - Supports multiple directories separated by whitespace (space, tab, or newline)
   - `ACCESS_LOG_BASENAME` (default `access.log`)
   - `DNS_TIMEOUT_SECONDS` (default `3`)
   - `HOST_SCAN_LOG=on|off` (default `on`)
@@ -71,13 +74,20 @@ Config files:
   - `SUBNET_PROMOTION_LOG=on|off` (default `on`)
   - `SUBNET_PROMOTION=on|off` (default `on`)
   - `SUBNET_THRESHOLD=10` (promote to `/24` when unique IP count is greater than this value)
-- `config/bad-hostnames.local`: `|`-delimited ban tokens for host/IP text
-- `config/good-hostnames.local`: `|`-delimited global allowlist for host/IP text
-- `config/bad-agents.local`: `|`-delimited suspicious agent tokens
-- `config/good-agents.local`: `|`-delimited global allowlist for agent text
-- `config/sitemap.local`: `|`-delimited sitemap path tokens (default `sitemap`)
+  - `BAD_HOSTNAMES` (`|`-delimited host/IP ban tokens)
+  - `GOOD_HOSTNAMES` (`|`-delimited host/IP allowlist tokens)
+  - `BAD_AGENTS` (`|`-delimited suspicious agent tokens)
+  - `GOOD_AGENTS` (`|`-delimited known-good agent tokens)
+  - `SITEMAP_TOKENS` (`|`-delimited sitemap/path tokens; default `sitemap`)
+- Optional `.local` overrides:
+  - Any `config/*.local` file can override none, any, or all settings.
+  - Token overrides are complete replacement values, not merge/append behavior.
+    For example, setting `BAD_HOSTNAMES=example.com` in a `.local` file means only
+    `example.com` is searched and default `BAD_HOSTNAMES` values are ignored.
+  - Pipe-delimited token example:
+    `BAD_HOSTNAMES=example.com|example.net`.
 
-Global allowlists (`good-hostnames.local`, `good-agents.local`) are applied to
+Global allowlists (`GOOD_HOSTNAMES`, `GOOD_AGENTS`) are applied to
 hostname, agent, and sitemap scans.
 
 Hostname lookups use a shared persistent cache (`logs/hostname-cache.tsv`) to
@@ -85,10 +95,10 @@ avoid repeated DNS lookups across cron and CLI runs.
 
 Allowlist precedence notes:
 
-- `bad-hostnames.local` matches are ignored when `good-hostnames.local` or
-  `good-agents.local` match the same event's hostname, IP, or agent string.
-- `bad-agents.local` matches are ignored when `good-hostnames.local` or
-  `good-agents.local` match the same event's hostname, IP, or agent string.
+- `BAD_HOSTNAMES` matches are ignored when `GOOD_HOSTNAMES` or
+  `GOOD_AGENTS` match the same event's hostname, IP, or agent string.
+- `BAD_AGENTS` matches are ignored when `GOOD_HOSTNAMES` or
+  `GOOD_AGENTS` match the same event's hostname, IP, or agent string.
 
 Matching behavior summary:
 
@@ -168,21 +178,21 @@ to run every 6 days.
 ### Hostname Scan
 
 - Reverse lookup uses `host` with `dig` fallback
-- Uses `bad-hostnames.local` for matches and `good-hostnames.local`/`good-agents.local` for allowlisting
+- Uses `BAD_HOSTNAMES` for matches and `GOOD_HOSTNAMES`/`GOOD_AGENTS` for allowlisting
 - Controlled by:
   - `HOST_SCAN_LOG=on|off`
   - `HOST_SCAN_BAN=on|off`
 
 ### Agent Scan
 
-- Uses `bad-agents.local` for matches and `good-hostnames.local`/`good-agents.local` for allowlisting
+- Uses `BAD_AGENTS` for matches and `GOOD_HOSTNAMES`/`GOOD_AGENTS` for allowlisting
 - Controlled by:
   - `AGENT_SCAN_LOG=on|off`
   - `AGENT_SCAN_BAN=on|off`
 
 ### Sitemap Scan
 
-- Uses `sitemap.local` token matching against request paths
+- Uses `SITEMAP_TOKENS` token matching against request paths
 - Example: `sitemap` matches `sitemap.xml`, `sitemap2.xml`, etc.
 - Controlled by:
   - `SITEMAP_SCAN_LOG=on|off`

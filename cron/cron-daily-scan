@@ -39,7 +39,7 @@ AGENT_UNIQUE_LOG="$LOGS_DIR/unique-agent-log"
 SITEMAP_BAN_LOG="$LOGS_DIR/sitemap-ban-log"
 SUBNET_PROMOTION_LOG_FILE="$LOGS_DIR/subnet-promotion-log"
 
-load_config_if_exists "$ROOT_DIR/config/old-man-bans-cloud.local"
+load_config_layers "$ROOT_DIR/config"
 
 LOG_DIR="${LOG_DIR:-$LOG_DIR_DEFAULT}"
 ACCESS_LOG_BASENAME="${ACCESS_LOG_BASENAME:-$ACCESS_LOG_BASENAME_DEFAULT}"
@@ -64,15 +64,23 @@ validate_on_off "SUBNET_PROMOTION_LOG" "$SUBNET_PROMOTION_LOG"
 validate_on_off "SUBNET_PROMOTION" "$SUBNET_PROMOTION"
 [[ "$SUBNET_THRESHOLD" =~ ^[0-9]+$ ]] || { echo "SUBNET_THRESHOLD must be an integer." >&2; exit 1; }
 
-YESTERDAY_LOG_PATH="$LOG_DIR/$ACCESS_LOG_BASENAME.1"
-[[ -f "$YESTERDAY_LOG_PATH" ]] || { echo "Yesterday log not found: $YESTERDAY_LOG_PATH" >&2; exit 1; }
+split_whitespace_values_preserving_quotes "$LOG_DIR" LOG_DIRS
+(( ${#LOG_DIRS[@]} > 0 )) || { echo "LOG_DIR must contain at least one directory." >&2; exit 1; }
+
+declare -a YESTERDAY_LOG_PATHS
+for dir in "${LOG_DIRS[@]}"; do
+    dir_path="$(strip_wrapping_quotes "$dir")"
+    path="$dir_path/$ACCESS_LOG_BASENAME.1"
+    [[ -f "$path" ]] && YESTERDAY_LOG_PATHS+=( "$path" )
+done
+(( ${#YESTERDAY_LOG_PATHS[@]} > 0 )) || { echo "Yesterday log not found in configured LOG_DIR directories." >&2; exit 1; }
 
 declare -a BAD_HOSTNAMES GOOD_HOSTNAMES BAD_AGENTS GOOD_AGENTS SITEMAP_TOKENS
-load_tokens "$ROOT_DIR/config/bad-hostnames.local" BAD_HOSTNAMES
-load_tokens "$ROOT_DIR/config/good-hostnames.local" GOOD_HOSTNAMES
-load_tokens "$ROOT_DIR/config/bad-agents.local" BAD_AGENTS
-load_tokens "$ROOT_DIR/config/good-agents.local" GOOD_AGENTS
-load_tokens "$ROOT_DIR/config/sitemap.local" SITEMAP_TOKENS
+load_tokens_from_value "${BAD_HOSTNAMES:-}" BAD_HOSTNAMES
+load_tokens_from_value "${GOOD_HOSTNAMES:-}" GOOD_HOSTNAMES
+load_tokens_from_value "${BAD_AGENTS:-}" BAD_AGENTS
+load_tokens_from_value "${GOOD_AGENTS:-}" GOOD_AGENTS
+load_tokens_from_value "${SITEMAP_TOKENS:-}" SITEMAP_TOKENS
 
 exec 9>"$LOCK_FILE"
 flock -n 9 || { echo "Another daily scan is currently running; exiting."; exit 0; }
@@ -125,7 +133,7 @@ done < <(
         if (match($0, /"[A-Z]+ ([^ ]+) HTTP\/[0-9.]+"/, req)) path=req[1]
         if (match($0, /"([^"]*)"$/, a)) ua=a[1]
         print ip "\t" path "\t" ua
-    }' "$YESTERDAY_LOG_PATH"
+    }' "${YESTERDAY_LOG_PATHS[@]}"
 )
 
 for subnet in "${!SUBNET_COUNT[@]}"; do
