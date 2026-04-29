@@ -14,7 +14,7 @@
 # Example: disable banning but keep logging.
 # HOST_SCAN_BAN=off
 # AGENT_SCAN_BAN=off
-# SITEMAP_SCAN_BAN=off
+# URLPATTERN_SCAN_BAN=off
 
 # Example: complete override of bad hostname tokens.
 # This replaces all defaults (does not append).
@@ -23,5 +23,8 @@
 # Example: complete override of known-good agents.
 # GOOD_AGENTS=googlebot|bingbot
 
-# Example: complete override of sitemap path tokens.
-# SITEMAP_TOKENS=sitemap|robots.txt
+# Example: complete override of bad URL pattern tokens.
+# BAD_URLPATTERNS=sitemap|robots.txt
+#
+# Example: URL pattern allowlist tokens.
+# GOOD_URLPATTERNS=healthz|status

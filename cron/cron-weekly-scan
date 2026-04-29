@@ -11,7 +11,7 @@ source "$ROOT_DIR/lib/agent-lib"
 # shellcheck disable=SC1091
 source "$ROOT_DIR/lib/hostname-lib"
 # shellcheck disable=SC1091
-source "$ROOT_DIR/lib/sitemap-lib"
+source "$ROOT_DIR/lib/urlpattern-lib"
 # shellcheck disable=SC1091
 source "$ROOT_DIR/lib/subnet-lib"
 
@@ -22,8 +22,8 @@ HOST_SCAN_LOG_DEFAULT="on"
 HOST_SCAN_BAN_DEFAULT="on"
 AGENT_SCAN_LOG_DEFAULT="on"
 AGENT_SCAN_BAN_DEFAULT="on"
-SITEMAP_SCAN_LOG_DEFAULT="on"
-SITEMAP_SCAN_BAN_DEFAULT="on"
+URLPATTERN_SCAN_LOG_DEFAULT="on"
+URLPATTERN_SCAN_BAN_DEFAULT="on"
 SUBNET_PROMOTION_LOG_DEFAULT="on"
 SUBNET_PROMOTION_DEFAULT="on"
 SUBNET_THRESHOLD_DEFAULT=10
@@ -36,7 +36,7 @@ HOSTNAME_CACHE_FILE="$LOGS_DIR/hostname-cache.tsv"
 HOST_BAN_LOG="$LOGS_DIR/host-ban-log"
 AGENT_BAN_LOG="$LOGS_DIR/agent-ban-log"
 AGENT_UNIQUE_LOG="$LOGS_DIR/unique-agent-log"
-SITEMAP_BAN_LOG="$LOGS_DIR/sitemap-ban-log"
+URLPATTERN_BAN_LOG="$LOGS_DIR/urlpattern-ban-log"
 SUBNET_PROMOTION_LOG_FILE="$LOGS_DIR/subnet-promotion-log"
 
 load_config_layers "$ROOT_DIR/config"
@@ -48,8 +48,8 @@ HOST_SCAN_LOG="${HOST_SCAN_LOG:-$HOST_SCAN_LOG_DEFAULT}"
 HOST_SCAN_BAN="${HOST_SCAN_BAN:-$HOST_SCAN_BAN_DEFAULT}"
 AGENT_SCAN_LOG="${AGENT_SCAN_LOG:-$AGENT_SCAN_LOG_DEFAULT}"
 AGENT_SCAN_BAN="${AGENT_SCAN_BAN:-$AGENT_SCAN_BAN_DEFAULT}"
-SITEMAP_SCAN_LOG="${SITEMAP_SCAN_LOG:-$SITEMAP_SCAN_LOG_DEFAULT}"
-SITEMAP_SCAN_BAN="${SITEMAP_SCAN_BAN:-$SITEMAP_SCAN_BAN_DEFAULT}"
+URLPATTERN_SCAN_LOG="${URLPATTERN_SCAN_LOG:-$URLPATTERN_SCAN_LOG_DEFAULT}"
+URLPATTERN_SCAN_BAN="${URLPATTERN_SCAN_BAN:-$URLPATTERN_SCAN_BAN_DEFAULT}"
 SUBNET_PROMOTION_LOG="${SUBNET_PROMOTION_LOG:-$SUBNET_PROMOTION_LOG_DEFAULT}"
 SUBNET_PROMOTION="${SUBNET_PROMOTION:-$SUBNET_PROMOTION_DEFAULT}"
 SUBNET_THRESHOLD="${SUBNET_THRESHOLD:-$SUBNET_THRESHOLD_DEFAULT}"
@@ -58,18 +58,19 @@ validate_on_off "HOST_SCAN_LOG" "$HOST_SCAN_LOG"
 validate_on_off "HOST_SCAN_BAN" "$HOST_SCAN_BAN"
 validate_on_off "AGENT_SCAN_LOG" "$AGENT_SCAN_LOG"
 validate_on_off "AGENT_SCAN_BAN" "$AGENT_SCAN_BAN"
-validate_on_off "SITEMAP_SCAN_LOG" "$SITEMAP_SCAN_LOG"
-validate_on_off "SITEMAP_SCAN_BAN" "$SITEMAP_SCAN_BAN"
+validate_on_off "URLPATTERN_SCAN_LOG" "$URLPATTERN_SCAN_LOG"
+validate_on_off "URLPATTERN_SCAN_BAN" "$URLPATTERN_SCAN_BAN"
 validate_on_off "SUBNET_PROMOTION_LOG" "$SUBNET_PROMOTION_LOG"
 validate_on_off "SUBNET_PROMOTION" "$SUBNET_PROMOTION"
 [[ "$SUBNET_THRESHOLD" =~ ^[0-9]+$ ]] || { echo "SUBNET_THRESHOLD must be an integer." >&2; exit 1; }
 
-declare -a BAD_HOSTNAMES GOOD_HOSTNAMES BAD_AGENTS GOOD_AGENTS SITEMAP_TOKENS
+declare -a BAD_HOSTNAMES GOOD_HOSTNAMES BAD_AGENTS GOOD_AGENTS BAD_URLPATTERNS GOOD_URLPATTERNS
 load_tokens_from_value "${BAD_HOSTNAMES:-}" BAD_HOSTNAMES
 load_tokens_from_value "${GOOD_HOSTNAMES:-}" GOOD_HOSTNAMES
 load_tokens_from_value "${BAD_AGENTS:-}" BAD_AGENTS
 load_tokens_from_value "${GOOD_AGENTS:-}" GOOD_AGENTS
-load_tokens_from_value "${SITEMAP_TOKENS:-}" SITEMAP_TOKENS
+load_tokens_from_value "${BAD_URLPATTERNS:-}" BAD_URLPATTERNS
+load_tokens_from_value "${GOOD_URLPATTERNS:-}" GOOD_URLPATTERNS
 
 exec 9>"$LOCK_FILE"
 flock -n 9 || { echo "Another weekly scan is currently running; exiting."; exit 0; }
@@ -112,9 +113,10 @@ while IFS=$'\t' read -r ip path agent; do
         [[ "$AGENT_SCAN_BAN" == "on" ]] && should_ban="on"
     fi
 
-    if sitemap_path_matches "$path" "${SITEMAP_TOKENS[@]}"; then
-        [[ "$SITEMAP_SCAN_LOG" == "on" ]] && log_ban_event "$SITEMAP_BAN_LOG" "$ts" "$ip" "$hostname" "$agent"
-        [[ "$SITEMAP_SCAN_BAN" == "on" ]] && should_ban="on"
+    if urlpattern_path_matches "$path" "${BAD_URLPATTERNS[@]}" && \
+       ! urlpattern_path_matches "$path" "${GOOD_URLPATTERNS[@]}"; then
+        [[ "$URLPATTERN_SCAN_LOG" == "on" ]] && log_ban_event "$URLPATTERN_BAN_LOG" "$ts" "$ip" "$hostname" "$agent"
+        [[ "$URLPATTERN_SCAN_BAN" == "on" ]] && should_ban="on"
 
         subnet="$(ipv4_to_subnet24 "$ip" || true)"
         if [[ -n "$subnet" ]]; then

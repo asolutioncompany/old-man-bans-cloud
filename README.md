@@ -64,8 +64,8 @@ Config files:
   - `HOST_SCAN_BAN=on|off` (default `on`)
   - `AGENT_SCAN_LOG=on|off` (default `on`)
   - `AGENT_SCAN_BAN=on|off` (default `on`)
-  - `SITEMAP_SCAN_LOG=on|off` (default `on`)
-  - `SITEMAP_SCAN_BAN=on|off` (default `on`)
+  - `URLPATTERN_SCAN_LOG=on|off` (default `on`)
+  - `URLPATTERN_SCAN_BAN=on|off` (default `on`)
   - `SUBNET_PROMOTION_LOG=on|off` (default `on`)
   - `SUBNET_PROMOTION=on|off` (default `on`)
   - `SUBNET_THRESHOLD=10` (promote to `/24` when unique IP count is greater than this value)
@@ -73,7 +73,8 @@ Config files:
   - `GOOD_HOSTNAMES` (`|`-delimited host/IP allowlist tokens)
   - `BAD_AGENTS` (`|`-delimited suspicious agent tokens)
   - `GOOD_AGENTS` (`|`-delimited known-good agent tokens)
-  - `SITEMAP_TOKENS` (`|`-delimited sitemap/path tokens; default `sitemap`)
+  - `BAD_URLPATTERNS` (`|`-delimited URL path ban tokens; default `sitemap`)
+  - `GOOD_URLPATTERNS` (`|`-delimited URL path allowlist tokens; default empty)
 - Optional `.local` overrides:
   - Any `config/*.local` file can override none, any, or all settings.
   - Token overrides are complete replacement values, not merge/append behavior.
@@ -81,7 +82,7 @@ Config files:
     `example.com` is searched and default `BAD_HOSTNAMES` values are ignored.
 
 Global allowlists (`GOOD_HOSTNAMES`, `GOOD_AGENTS`) are applied to
-hostname, agent, and sitemap scans.
+hostname, agent, and URL pattern scans.
 
 Hostname lookups use a shared persistent cache (`logs/hostname-cache.tsv`) to
 avoid repeated DNS lookups across cron and CLI runs.
@@ -97,7 +98,7 @@ Matching behavior summary:
 
 - Hostname and agent matching is case-insensitive token substring matching
   (partial matches; wildcard-like behavior without explicit `*` syntax).
-- Sitemap path matching is case-insensitive token substring matching
+- URL pattern path matching is case-insensitive token substring matching
   (for example, `sitemap` matches `sitemap.xml`, `sitemap1.xml`, `sitemap2.xml`).
 - IPv4 matching is exact when an IP token is used.
 
@@ -176,13 +177,14 @@ to run every 6 days.
   - `AGENT_SCAN_LOG=on|off`
   - `AGENT_SCAN_BAN=on|off`
 
-### Sitemap Scan
+### URL Pattern Scan
 
-- Uses `SITEMAP_TOKENS` token matching against request paths
+- Uses `BAD_URLPATTERNS` token matching against request paths
+- Uses `GOOD_URLPATTERNS` as a URL-path allowlist that suppresses URL pattern matches
 - Example: `sitemap` matches `sitemap.xml`, `sitemap2.xml`, etc.
 - Controlled by:
-  - `SITEMAP_SCAN_LOG=on|off`
-  - `SITEMAP_SCAN_BAN=on|off`
+  - `URLPATTERN_SCAN_LOG=on|off`
+  - `URLPATTERN_SCAN_BAN=on|off`
 
 ### Subnet Promotion
 
@@ -209,7 +211,7 @@ Hostname placeholders used in logs:
 - `logs/host-ban-log`: host/cloud match events
 - `logs/agent-ban-log`: agent match events
 - `logs/unique-agent-log`: unique discovered agent strings
-- `logs/sitemap-ban-log`: sitemap-matched events considered for subnet promotion
+- `logs/urlpattern-ban-log`: URL-pattern-matched events considered for subnet promotion
 - `logs/subnet-promotion-log`: subnet promotions (`subnet`, unique-ip count, removed `/32` count)
 
 Ban-event logs use format:
@@ -231,7 +233,7 @@ One concern is corporate use where users might each have their own IP address. A
 
 Therefore, it is recommended to set a higher thresold. It is also suggested to start with logging only to monitor for false positives in these situations. 10 is a good upper level thresold, but it still depends on the traffic.
 
-The sitemap detection was added as a good way to detect data mining botnets. Large websites will have several sitemaps and botnets will hit these sitemaps from several IP addresses within a day, making it easy to detect and stop botnets performing data mining. It is also fairly safe to assume any access of your sitemap is likely from a bot performing data mining.
+URL pattern detection was added as a practical signal for data-mining botnets. Large sites often expose structured endpoints (for example, sitemap files), and botnets frequently hit these paths from many IP addresses in a short window. That pattern makes coordinated mining activity easier to detect and block.
 
 Just be aware that you will likely be blocking lesser known search engines and other possible ethical data mining where content is sourced.
 

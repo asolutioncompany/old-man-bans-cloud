@@ -1,0 +1,8 @@
+#!/bin/bash
+# urlpattern-lib - shared helpers for urlpattern/path token checks.
+
+urlpattern_path_matches() {
+    local path="$1"
+    shift
+    contains_any_token "$path" "$@"
+}
